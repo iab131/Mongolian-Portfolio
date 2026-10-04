@@ -10,6 +10,7 @@ export function QaHooks() {
   const gl = useThree((s) => s.gl);
   const advance = useThree((s) => s.advance);
   const camera = useThree((s) => s.camera);
+  const scene = useThree((s) => s.scene);
 
   // Count the whole frame (shadow + scene + post passes), not just the last render call.
   useEffect(() => {
@@ -24,6 +25,7 @@ export function QaHooks() {
       get renderer() {
         const { render, memory, programs } = gl.info;
         return {
+          frame: render.frame,
           calls: render.calls,
           triangles: render.triangles,
           points: render.points,
@@ -40,13 +42,13 @@ export function QaHooks() {
         return { mode: s.mode, gerId: s.gerId, nearGerId: s.nearGerId, projectSlug: s.projectSlug, overlay: s.overlay, quality: s.quality };
       },
     };
-    // Manual frame stepping for hidden browser panes.
-    w.__steppe = { advance, camera, store: useStore, riderPose };
+    // Manual frame stepping for hidden browser panes: advance(performance.now() / 1000) (seconds).
+    w.__steppe = { advance, camera, scene, store: useStore, riderPose };
     return () => {
       delete w.__THREE_GAME_DIAGNOSTICS__;
       delete w.__steppe;
     };
-  }, [gl, advance, camera]);
+  }, [gl, advance, camera, scene]);
 
   return null;
 }

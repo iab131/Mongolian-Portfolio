@@ -5,139 +5,14 @@ import { useMemo, useRef } from "react";
 import * as THREE from "three";
 import { GER_SITES, gerSiteById } from "@/lib/layout";
 import { PartBuilder } from "@/lib/merge";
-import { riderPose } from "@/lib/rider";
 import { useStore } from "@/lib/store";
 import { heightAt, trackDistance } from "@/lib/terrain";
 import { worldKit } from "@/lib/worldMaterials";
 import { HORIZON } from "./SkyDome";
+import { Herds } from "./Herds";
 import { eagleParts } from "./Props";
 
 const paused = () => useStore.getState().paused;
-
-// ───────────────────────── Herd: sheep and goats (2 draw calls) ─────────────────────────
-
-const HERD_CENTER = { x: 26, z: 24 };
-const HERD_N = 34;
-
-function sheepGeometries() {
-  const body = new PartBuilder();
-  body.add("wool", new THREE.IcosahedronGeometry(0.42, 1), [0, 0.62, 0], [0, 0, 0], [0.85, 0.75, 1.15]);
-  body.add("wool", new THREE.IcosahedronGeometry(0.2, 0), [0, 0.78, -0.38], [0, 0, 0], [1, 0.9, 1]);
-  const dark = new PartBuilder();
-  dark.add("woolDark", new THREE.BoxGeometry(0.17, 0.2, 0.3), [0, 0.68, -0.58], [0.5, 0, 0]);
-  for (const s of [-1, 1]) dark.add("woolDark", new THREE.BoxGeometry(0.16, 0.05, 0.08), [s * 0.13, 0.78, -0.5], [0, 0, s * 0.4]);
-  for (const [x, z] of [
-    [-0.18, -0.3],
-    [0.18, -0.3],
-    [-0.18, 0.3],
-    [0.18, 0.3],
-  ]) {
-    dark.add("woolDark", new THREE.CylinderGeometry(0.045, 0.035, 0.42, 5), [x, 0.21, z]);
-  }
-  return { body: body.build().get("wool")!, dark: dark.build().get("woolDark")! };
-}
-
-type Animal = { x: number; z: number; yaw: number; speed: number; tx: number; tz: number; timer: number; graze: number };
-
-// Deterministic wander so captures are repeatable.
-let herdSeed = 31337;
-const herdRnd = () => ((herdSeed = (herdSeed * 16807) % 2147483647) / 2147483647);
-
-function Herd() {
-  const kit = worldKit();
-  const geos = useMemo(() => sheepGeometries(), []);
-  const bodyRef = useRef<THREE.InstancedMesh>(null);
-  const darkRef = useRef<THREE.InstancedMesh>(null);
-  const herd = useMemo<Animal[]>(() => {
-    let seed = 99;
-    const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
-    return Array.from({ length: HERD_N }, () => {
-      const a = rnd() * Math.PI * 2;
-      const d = Math.sqrt(rnd()) * 9;
-      const x = HERD_CENTER.x + Math.cos(a) * d;
-      const zz = HERD_CENTER.z + Math.sin(a) * d;
-      return { x, z: zz, yaw: rnd() * 6.28, speed: 0, tx: x, tz: zz, timer: rnd() * 5, graze: rnd() * 6 };
-    });
-  }, []);
-  const o = useMemo(() => new THREE.Object3D(), []);
-  const colorInit = useRef(false);
-
-  useFrame((_, rawDt) => {
-    const b = bodyRef.current;
-    const k = darkRef.current;
-    if (!b || !k) return;
-    if (!colorInit.current) {
-      const c = new THREE.Color();
-      herd.forEach((_, i) => b.setColorAt(i, c.set(i % 5 === 0 ? "#7a5a3c" : i % 7 === 0 ? "#3b322b" : i % 3 ? "#f2ede2" : "#e3d7c0")));
-      if (b.instanceColor) b.instanceColor.needsUpdate = true;
-      colorInit.current = true;
-    }
-    const dt = paused() ? 0 : Math.min(rawDt, 0.05);
-    herd.forEach((a, i) => {
-      a.timer -= dt;
-      const dxh = a.x - riderPose.x;
-      const dzh = a.z - riderPose.z;
-      const dh = Math.hypot(dxh, dzh);
-      let want = 0;
-      if (dh < 7 && Math.abs(riderPose.speed) > 1) {
-        // Scatter away from the horse
-        a.tx = a.x + (dxh / dh) * 6;
-        a.tz = a.z + (dzh / dh) * 6;
-        want = 3.2;
-        a.timer = 1.5;
-      } else if (a.timer <= 0) {
-        const ang = herdRnd() * Math.PI * 2;
-        const d = Math.sqrt(herdRnd()) * 10;
-        a.tx = HERD_CENTER.x + Math.cos(ang) * d;
-        a.tz = HERD_CENTER.z + Math.sin(ang) * d;
-        a.timer = 4 + herdRnd() * 8;
-      }
-      const dx = a.tx - a.x;
-      const dz = a.tz - a.z;
-      const dist = Math.hypot(dx, dz);
-      if (!want && dist > 0.6) want = 0.7;
-      a.speed += (want - a.speed) * (1 - Math.exp(-3 * dt));
-      if (dist > 0.05) {
-        const targetYaw = Math.atan2(-dx, -dz);
-        let dy = targetYaw - a.yaw;
-        dy = Math.atan2(Math.sin(dy), Math.cos(dy));
-        a.yaw += dy * (1 - Math.exp(-4 * dt));
-      }
-      a.x += -Math.sin(a.yaw) * a.speed * dt;
-      a.z += -Math.cos(a.yaw) * a.speed * dt;
-      // stay out of gers
-      for (const g of GER_SITES) {
-        const gx = a.x - g.x;
-        const gz = a.z - g.z;
-        const gd = Math.hypot(gx, gz);
-        if (gd < g.radius + 1) {
-          a.x = g.x + (gx / gd) * (g.radius + 1);
-          a.z = g.z + (gz / gd) * (g.radius + 1);
-        }
-      }
-      a.graze += dt;
-      const grazing = a.speed < 0.2 ? Math.max(0, Math.sin(a.graze * 0.7)) : 0;
-      const step = a.speed > 0.2 ? Math.abs(Math.sin(a.graze * a.speed * 6)) * 0.05 : 0;
-      o.position.set(a.x, heightAt(a.x, a.z) + step, a.z);
-      o.rotation.set(grazing * 0.35, a.yaw, 0);
-      o.scale.setScalar(i % 5 === 0 ? 1.08 : 0.92 + (i % 4) * 0.04);
-      o.updateMatrix();
-      b.setMatrixAt(i, o.matrix);
-      k.setMatrixAt(i, o.matrix);
-    });
-    b.instanceMatrix.needsUpdate = true;
-    k.instanceMatrix.needsUpdate = true;
-    b.computeBoundingSphere();
-    k.computeBoundingSphere();
-  });
-
-  return (
-    <>
-      <instancedMesh ref={bodyRef} args={[geos.body, kit.wool, HERD_N]} castShadow />
-      <instancedMesh ref={darkRef} args={[geos.dark, kit.woolDark, HERD_N]} castShadow />
-    </>
-  );
-}
 
 // ───────────────────────── Eagle circling over the Vision ger ─────────────────────────
 
@@ -322,10 +197,11 @@ function Rocks() {
 }
 
 export function Life() {
+  const high = useStore((s) => s.quality) === "high";
   return (
     <>
-      <Herd />
-      <SoaringEagle />
+      <Herds />
+      {high && <SoaringEagle />}
       <Clouds />
       <FarRidge />
       <Rocks />

@@ -1,4 +1,4 @@
-import { GER_SITES, OVOO, SPAWN, WORLD_RADIUS } from "./layout";
+import { CAMP_HUB, GER_SITES, OVOO, OVOO_HILL, SPAWN, WORLD_RADIUS } from "./layout";
 
 // One analytic height function, shared by mesh generation, CPU ground queries,
 // and (via TERRAIN_GLSL) the grass vertex shader, so everything sits on the same surface.
@@ -16,6 +16,14 @@ function rollingHills(x: number, z: number) {
   );
 }
 
+/** Cosine-bell hill under the ovoo. */
+function hill(x: number, z: number) {
+  const d = Math.hypot(x - OVOO_HILL.x, z - OVOO_HILL.z) / OVOO_HILL.radius;
+  return d < 1 ? OVOO_HILL.height * 0.5 * (1 + Math.cos(Math.PI * d)) : 0;
+}
+
+const base = (x: number, z: number) => rollingHills(x, z) + hill(x, z);
+
 function mountains(x: number, z: number) {
   const r = Math.hypot(x, z);
   const a = Math.atan2(z, x);
@@ -30,18 +38,25 @@ function mountains(x: number, z: number) {
 // Flat pads where things stand, so gers don't float or sink.
 export const PADS = [
   ...GER_SITES.map((s) => ({ x: s.x, z: s.z, inner: s.radius + 2, outer: s.radius + 9 })),
-  { x: OVOO.x, z: OVOO.z, inner: 3, outer: 8 },
+  { x: OVOO.x, z: OVOO.z, inner: OVOO.radius + 1.5, outer: OVOO.radius + 6 },
   { x: SPAWN.x, z: SPAWN.z, inner: 2, outer: 8 },
-].map((p) => ({ ...p, h: rollingHills(p.x, p.z) }));
+].map((p) => ({ ...p, h: base(p.x, p.z) }));
 
-// Worn tracks: spawn → ovoo → each ger door. [ax, az, bx, bz]
+// Worn tracks: spawn → camp hub → each ger door, and spawn → up the hill to the ovoo. [ax, az, bx, bz]
+const ovooApproach = (() => {
+  const dx = SPAWN.x - OVOO.x;
+  const dz = SPAWN.z - OVOO.z;
+  const d = Math.hypot(dx, dz);
+  return [OVOO.x + (dx / d) * (OVOO.radius + 2), OVOO.z + (dz / d) * (OVOO.radius + 2)];
+})();
 export const TRACKS: [number, number, number, number][] = [
-  ...GER_SITES.map((s) => [OVOO.x - 3, OVOO.z - 3, s.x, s.z + s.radius] as [number, number, number, number]),
-  [SPAWN.x, SPAWN.z, OVOO.x - 3, OVOO.z - 3],
+  [SPAWN.x, SPAWN.z, CAMP_HUB.x, CAMP_HUB.z],
+  ...GER_SITES.map((s) => [CAMP_HUB.x, CAMP_HUB.z, s.x, s.z + s.radius] as [number, number, number, number]),
+  [SPAWN.x, SPAWN.z, ovooApproach[0], ovooApproach[1]],
 ];
 
 export function heightAt(x: number, z: number): number {
-  let h = rollingHills(x, z);
+  let h = base(x, z);
   for (const p of PADS) {
     const w = 1 - smoothstep(p.inner, p.outer, Math.hypot(x - p.x, z - p.z));
     h += (p.h - h) * w;
@@ -72,6 +87,10 @@ float tRolling(vec2 p) {
        + sin((p.x + p.y) * 0.061 + 1.3) * 0.9
        + cos(p.x * 0.12 - p.y * 0.085) * 0.3;
 }
+float tHill(vec2 p) {
+  float d = length(p - vec2(${f(OVOO_HILL.x)}, ${f(OVOO_HILL.z)})) / ${f(OVOO_HILL.radius)};
+  return d < 1.0 ? ${f(OVOO_HILL.height)} * 0.5 * (1.0 + cos(3.14159265 * d)) : 0.0;
+}
 float tMountains(vec2 p) {
   float r = length(p);
   float a = atan(p.y, p.x);
@@ -82,7 +101,7 @@ float tMountains(vec2 p) {
   return m * (55.0 * ridge + 16.0 * rug * rug + 5.0 * rug2) - m * 8.0;
 }
 float tHeight(vec2 p) {
-  float h = tRolling(p);
+  float h = tRolling(p) + tHill(p);
   float w;
 ${PADS.map(
   (p) =>

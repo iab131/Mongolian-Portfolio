@@ -11,6 +11,7 @@ import { heightAt } from "@/lib/terrain";
 import { contactTexture } from "@/lib/worldMaterials";
 import { Horse, type HorseHandle } from "./Horse";
 import { Particles, type ParticlesHandle } from "./Particles";
+import { CAMP_COLLIDERS } from "./Camp";
 import { PROP_COLLIDERS } from "./Props";
 
 // Kinematic horse: no physics engine. Heavy, smoothed acceleration and turning.
@@ -20,7 +21,7 @@ const REVERSE = -2.5;
 const ACCEL = 1.4;
 const BRAKE = 2.6;
 const HORSE_RADIUS = 1.3;
-const COLLIDERS = [...GER_SITES, OVOO, ...PROP_COLLIDERS];
+const COLLIDERS = [...GER_SITES, OVOO, ...PROP_COLLIDERS, ...CAMP_COLLIDERS];
 const want = new THREE.Vector3();
 const lookWant = new THREE.Vector3();
 

@@ -1,8 +1,11 @@
 "use client";
 
-import { forwardRef, useImperativeHandle, useMemo, useRef } from "react";
+import { forwardRef, useImperativeHandle, useLayoutEffect, useMemo, useRef } from "react";
 import * as THREE from "three";
+import { spanMatrix } from "@/lib/merge";
+import { mergeStaticChildren } from "@/lib/mergeChildren";
 import { ornamentBand } from "@/lib/ornament";
+import { Horseman, type HorsemanHandle } from "./Horseman";
 
 // Procedural Mongolian horse with tack. Faces -z. Withers ≈ 1.6 units.
 // Animated by `update(dt, speed, elapsed)` from the Rider: procedural walk / trot / gallop.
@@ -69,6 +72,15 @@ function useMaterials() {
   }, []);
 }
 
+function Rein({ from, to, mat }: { from: [number, number, number]; to: [number, number, number]; mat: THREE.Material }) {
+  const { matrix, len } = useMemo(() => spanMatrix(from, to), [from, to]);
+  return (
+    <mesh matrix={matrix} matrixAutoUpdate={false} material={mat}>
+      <cylinderGeometry args={[0.012, 0.012, len, 4]} />
+    </mesh>
+  );
+}
+
 /** A tapered limb segment hanging down from its joint (origin at the top). */
 function Segment({
   len,
@@ -121,12 +133,9 @@ function Leg({
         </mesh>
         <Segment len={lower} r0={0.06} r1={0.05} mat={mats.points} />
         <group position={[0, -lower, 0]} ref={(el) => void (refs.fetlock = el)}>
-          <mesh material={mats.points}>
-            <sphereGeometry args={[0.062, 6, 5]} />
-          </mesh>
           <group rotation={[-0.35, 0, 0]}>
             <Segment len={0.16} r0={0.052} r1={0.058} mat={mats.points} shadow={false} />
-            <mesh position={[0, -0.2, -0.02]} material={mats.hoof} ref={(el) => void (refs.hoof = el)}>
+            <mesh position={[0, -0.2, -0.02]} material={mats.hoof} userData={{ keep: true }} ref={(el) => void (refs.hoof = el)}>
               <cylinderGeometry args={[0.065, 0.085, 0.1, 8]} />
             </mesh>
           </group>
@@ -157,6 +166,12 @@ export const Horse = forwardRef<HorseHandle>(function Horse(_, ref) {
   const ears = useRef<(THREE.Mesh | null)[]>([]);
   const barrel = useRef<THREE.Mesh>(null);
   const stirrups = useRef<(THREE.Group | null)[]>([]);
+  const rider = useRef<HorsemanHandle>(null);
+  const root = useRef<THREE.Group>(null);
+  // Collapse static parts per joint into one mesh per material (≈100 meshes → far fewer draw calls).
+  useLayoutEffect(() => {
+    if (root.current) mergeStaticChildren(root.current);
+  }, []);
   const legs = useRef<LegRefs[]>(LEG_SPOTS.map(() => ({ root: null, knee: null, fetlock: null, hoof: null })));
   const state = useRef({ phase: 0, prevStance: [true, true, true, true], gaitSpeed: 0 });
   const contacts = useRef<THREE.Vector3[]>([]);
@@ -209,11 +224,13 @@ export const Horse = forwardRef<HorseHandle>(function Horse(_, ref) {
         });
 
         const ph = s.phase * Math.PI * 2;
+        const bob = (Math.abs(Math.sin(ph * 2)) * 0.06 * trotness + Math.sin(ph) * 0.09 * gallopness) * moving;
+        const pitch = Math.sin(ph + 0.6) * 0.07 * gallopness;
         if (body.current) {
-          const bob = (Math.abs(Math.sin(ph * 2)) * 0.06 * trotness + Math.sin(ph) * 0.09 * gallopness) * moving;
           body.current.position.y = bob - 0.02 * gallopness;
-          body.current.rotation.x = Math.sin(ph + 0.6) * 0.07 * gallopness;
+          body.current.rotation.x = pitch;
         }
+        rider.current?.update(gallopness, trotness, moving, ph, pitch, bob, t);
         // Breathing when still
         if (barrel.current) {
           const b = 1 + Math.sin(t * 1.6) * 0.012 * (1 - moving);
@@ -248,10 +265,10 @@ export const Horse = forwardRef<HorseHandle>(function Horse(_, ref) {
   );
 
   return (
-    <group>
+    <group ref={root}>
       <group ref={body}>
         {/* ── Body masses ── */}
-        <mesh ref={barrel} position={[0, 1.36, 0]} rotation={[Math.PI / 2, 0, 0]} scale={[0.95, 1.04, 1]} material={mats.coat} castShadow>
+        <mesh ref={barrel} userData={{ keep: true }} position={[0, 1.36, 0]} rotation={[Math.PI / 2, 0, 0]} scale={[0.95, 1.04, 1]} material={mats.coat} castShadow>
           <capsuleGeometry args={[0.42, 1.0, 5, 12]} />
         </mesh>
         <mesh position={[0, 1.36, -0.7]} scale={[0.82, 1.06, 0.95]} material={mats.coat} castShadow>
@@ -279,6 +296,7 @@ export const Horse = forwardRef<HorseHandle>(function Horse(_, ref) {
             <mesh
               key={i}
               ref={(el) => void (mane.current[i] = el)}
+              userData={{ keep: true }}
               position={[0, 0.06 + i * 0.13, 0.22 - i * 0.012]}
               material={mats.points}
             >
@@ -312,6 +330,7 @@ export const Horse = forwardRef<HorseHandle>(function Horse(_, ref) {
               <mesh
                 key={x}
                 ref={(el) => void (ears.current[i] = el)}
+                userData={{ keep: true }}
                 position={[x * 0.09, 0.2, 0.02]}
                 rotation={[-0.25, 0, x * -0.2]}
                 material={mats.coat}
@@ -408,6 +427,12 @@ export const Horse = forwardRef<HorseHandle>(function Horse(_, ref) {
         <mesh position={[0, 1.5, -0.95]} rotation={[Math.PI / 2 - 0.25, 0, 0]} material={mats.leather}>
           <torusGeometry args={[0.38, 0.025, 4, 18, Math.PI]} />
         </mesh>
+
+        {/* ── Rider and reins ── */}
+        <Horseman ref={rider} />
+        {[-1, 1].map((x) => (
+          <Rein key={x} from={[x * 0.12, 2.2, -0.5]} to={[x * 0.1, 2.32, -1.32]} mat={mats.leather} />
+        ))}
 
         {/* ── Legs ── */}
         {LEG_SPOTS.map((l, i) => (

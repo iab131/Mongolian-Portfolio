@@ -1,0 +1,28 @@
+// CPU profile of active riding (production build). Aggregates self time by function + source.
+import { chromium } from "@playwright/test";
+import { writeFileSync } from "node:fs";
+const url = process.argv[2] ?? "http://127.0.0.1:3100/?qa";
+const browser = await chromium.launch({ args: ["--use-angle=d3d11", "--enable-gpu", "--disable-gpu-vsync=false"] });
+const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
+await page.goto(url);
+await page.waitForFunction(() => window.__steppe && window.__THREE_GAME_TEST_HOOKS__, null, { timeout: 30000 });
+await page.evaluate(() => window.__steppe.store.getState().teleport({ x: 0, z: 50, yaw: 0 }));
+await page.waitForTimeout(2000);
+await page.keyboard.down("KeyW");
+await page.keyboard.down("ShiftLeft");
+const cdp = await page.context().newCDPSession(page);
+await cdp.send("Profiler.enable");
+await cdp.send("Profiler.setSamplingInterval", { interval: 200 });
+const fps0 = await page.evaluate(() => new Promise((r) => { let n = 0; const t0 = performance.now(); const f = () => { n++; performance.now() - t0 < 2000 ? requestAnimationFrame(f) : r(n / 2); }; requestAnimationFrame(f); }));
+await cdp.send("Profiler.start");
+await page.waitForTimeout(5000);
+const { profile } = await cdp.send("Profiler.stop");
+writeFileSync("artifacts/perf/ride.cpuprofile", JSON.stringify(profile));
+const dt = profile.timeDeltas; const total = (profile.endTime - profile.startTime) / 1000;
+const self = new Map(); const byId = new Map(profile.nodes.map((n) => [n.id, n]));
+profile.samples.forEach((id, i) => { const n = byId.get(id); const cf = n.callFrame; const key = `${cf.functionName || "(anon)"} ${cf.url.split("/").pop()}:${cf.lineNumber}`; self.set(key, (self.get(key) ?? 0) + (dt[i] ?? 0) / 1000); });
+const sorted = [...self.entries()].sort((a, b) => b[1] - a[1]);
+const idle = (self.get("(idle) :-1") ?? 0) + (self.get("(program) :-1") ?? 0);
+console.log("fps", fps0, "window ms", total.toFixed(0));
+for (const [k, v] of sorted.slice(0, 28)) console.log((v / total * 100).toFixed(1).padStart(5) + "%", v.toFixed(0).padStart(6) + "ms", k.slice(0, 110));
+await browser.close();

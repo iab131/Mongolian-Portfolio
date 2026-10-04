@@ -11,50 +11,65 @@ import { contactTexture, worldKit } from "@/lib/worldMaterials";
 
 // Ovoo: conical stone cairn with a bundle of willow poles wrapped in blue khadag scarves. Marks the spawn.
 
-function buildCairn() {
+/** The stone cone, built at its true size from many hand-sized stones (not scaled-up boulders). */
+function buildCairn(R: number) {
   const b = new PartBuilder();
   let seed = 21;
   const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
-  const R = OVOO.radius;
-  // Stones stacked in rings that shrink upward: a cone, not a heap of boulders
-  for (let ring = 0; ring < 7; ring++) {
-    const rr = R * (1 - ring / 7.5);
-    const y = ring * 0.32;
-    const n = Math.max(3, Math.round(rr * 5.5));
+  const RINGS = 10;
+  for (let ring = 0; ring < RINGS; ring++) {
+    const rr = R * (1 - ring / (RINGS + 0.8));
+    const y = ring * 0.45;
+    const n = Math.max(4, Math.round(rr * 4.5));
     for (let i = 0; i < n; i++) {
       const a = (i / n) * Math.PI * 2 + ring * 0.6 + rnd() * 0.3;
-      const s = 0.22 + rnd() * 0.2 - ring * 0.012;
+      const s = 0.36 + rnd() * 0.26 - ring * 0.012;
+      const d = rr * (0.8 + rnd() * 0.18);
       b.add(
         rnd() > 0.35 ? "stone" : "stoneLight",
         new THREE.DodecahedronGeometry(1, 0),
-        [Math.cos(a) * rr * (0.75 + rnd() * 0.2), y + s * 0.5, Math.sin(a) * rr * (0.75 + rnd() * 0.2)],
+        [Math.cos(a) * d, y + s * 0.45, Math.sin(a) * d],
         [rnd() * 3, rnd() * 3, rnd() * 3],
-        [s * (1.1 + rnd() * 0.5), s * 0.75, s],
+        [s * (1.1 + rnd() * 0.5), s * 0.72, s],
       );
     }
     // fill the core so it reads solid
-    b.add("stone", new THREE.ConeGeometry(rr * 0.8, 0.4, 7), [0, y + 0.2, 0]);
-  }
-  // Bundle of willow poles leaning together at the top
-  for (let i = 0; i < 6; i++) {
-    const a = (i / 6) * Math.PI * 2;
-    const { matrix, len } = spanMatrix([Math.cos(a) * 0.35, 1.6, Math.sin(a) * 0.35], [Math.cos(a) * 0.12, 4.6 + (i % 3) * 0.35, Math.sin(a) * 0.12]);
-    b.addMatrix(i % 2 ? "rawWood" : "darkWood", new THREE.CylinderGeometry(0.035, 0.05, len, 5), matrix);
+    b.add("stone", new THREE.ConeGeometry(rr * 0.85, 0.5, 9), [0, y + 0.25, 0]);
   }
   // Ring of offering stones around the base
-  for (let i = 0; i < 14; i++) {
-    const a = (i / 14) * Math.PI * 2;
-    b.add("stoneLight", new THREE.DodecahedronGeometry(0.16, 0), [Math.cos(a) * (R + 0.9), 0.05, Math.sin(a) * (R + 0.9)], [a, a * 2, 0], [1, 0.6, 1]);
+  for (let i = 0; i < 28; i++) {
+    const a = (i / 28) * Math.PI * 2;
+    b.add("stoneLight", new THREE.DodecahedronGeometry(0.22, 0), [Math.cos(a) * (R + 1.3), 0.06, Math.sin(a) * (R + 1.3)], [a, a * 2, 0], [1, 0.6, 1]);
   }
   return b.build();
 }
+
+/** Bundle of willow poles leaning together; modelled small and scaled by RIG_SCALE on top of the cairn. */
+function buildPoles() {
+  const b = new PartBuilder();
+  for (let i = 0; i < 8; i++) {
+    const a = (i / 8) * Math.PI * 2;
+    const { matrix, len } = spanMatrix([Math.cos(a) * 0.35, 1.6, Math.sin(a) * 0.35], [Math.cos(a) * 0.12, 4.6 + (i % 3) * 0.35, Math.sin(a) * 0.12]);
+    b.addMatrix(i % 2 ? "rawWood" : "darkWood", new THREE.CylinderGeometry(0.035, 0.05, len, 5), matrix);
+  }
+  return b.build();
+}
+
+/** Cairn top is ~4.5 m; the pole rig rises to ~11 m. */
+const RIG_SCALE = 2.1;
+const RIG_Y = 3.6 - 1.6 * RIG_SCALE;
+
+const silkBlue = new THREE.MeshStandardMaterial({ color: "#4f9be8", roughness: 0.45 });
+const silkWhite = new THREE.MeshStandardMaterial({ color: "#f4f1ea", roughness: 0.45 });
 
 const SCARF_COLORS = ["#4f9be8", "#2f7fd6", "#7cc0ff", "#4f9be8", "#f4f1ea", "#2f7fd6", "#e2b21b", "#4f9be8"];
 
 export function Ovoo() {
   const kit = worldKit() as unknown as Record<string, THREE.Material>;
   const y = heightAt(OVOO.x, OVOO.z);
-  const parts = useMemo(() => buildCairn(), []);
+  const high = useStore((s) => s.quality) === "high";
+  const parts = useMemo(() => buildCairn(OVOO.radius), []);
+  const poles = useMemo(() => buildPoles(), []);
 
   // Scarves: long thin strips tied near the top, each a bent ribbon that flutters.
   const N = SCARF_COLORS.length;
@@ -96,15 +111,19 @@ export function Ovoo() {
       {[...parts].map(([k, g]) => (
         <mesh key={k} geometry={g} material={kit[k]} castShadow receiveShadow />
       ))}
-      {/* blue khadag wrapped around the pole bundle */}
-      {[2.6, 3.2, 3.9].map((h, i) => (
-        <mesh key={h} position={[0, h, 0]} rotation={[Math.PI / 2, 0, i]}>
-          <torusGeometry args={[0.24 - i * 0.04, 0.05, 5, 12]} />
-          <meshStandardMaterial color={i === 1 ? "#f4f1ea" : "#4f9be8"} roughness={0.45} />
-        </mesh>
-      ))}
-      <instancedMesh ref={scarves} args={[ribbon, silk, N]} castShadow />
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.04, 0]} renderOrder={1}>
+      <group position={[0, RIG_Y, 0]} scale={RIG_SCALE}>
+        {[...poles].map(([k, g]) => (
+          <mesh key={k} geometry={g} material={kit[k]} castShadow />
+        ))}
+        {/* blue khadag wrapped around the pole bundle */}
+        {[2.6, 3.2, 3.9].map((h, i) => (
+          <mesh key={h} position={[0, h, 0]} rotation={[Math.PI / 2, 0, i]} material={i === 1 ? silkWhite : silkBlue}>
+            <torusGeometry args={[0.24 - i * 0.04, 0.05, 5, 12]} />
+          </mesh>
+        ))}
+        <instancedMesh ref={scarves} args={[ribbon, silk, N]} castShadow />
+      </group>
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.04, 0]} renderOrder={1} visible={high}>
         <planeGeometry args={[OVOO.radius * 3.4, OVOO.radius * 3.4]} />
         <meshBasicMaterial map={contactTexture()} transparent depthWrite={false} />
       </mesh>

@@ -5,6 +5,7 @@ import { useRef } from "react";
 import { gerById } from "@/content/gers";
 import { GER_SITES } from "@/lib/layout";
 import { useStore } from "@/lib/store";
+import { Camp } from "./Camp";
 import { chimneyTop, Ger } from "./Ger";
 import { Grass } from "./Grass";
 import { Life } from "./Life";
@@ -52,6 +53,7 @@ export function WorldScene() {
       ))}
       <Props />
       <Life />
+      <Camp high={high} />
       <ChimneySmoke />
       <Rider shadows={high} />
     </>

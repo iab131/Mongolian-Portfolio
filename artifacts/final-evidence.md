@@ -60,3 +60,29 @@ Automatic failures: none observed (no placeholder primitives in active shots, HU
 - Minimap ger dots are 26–30 px tap targets (full map overlay has larger ones).
 - World labels (ger signs) are not occluded by the horse in side views.
 - Low tier grass is sparse on phones by design (22k blades).
+
+---
+
+# Pass 2 (2026-10-03): camp life, rider, ovoo hill, CPU
+
+Added: horseman in a deel (stands in the stirrups at a gallop, posts at the trot); five herds (horses, Bactrian camels, cattle, sheep, goats), one instanced draw call per species with legs and grazing heads animated in the vertex shader; the ovoo moved onto a hill east of the spawn and scaled to radius 3.4 with a track up to it; white horsehair tug (clan standard) with gilded trident head; outdoor argal (dried dung) fire with flames, embers, smoke and an argal pile; cow pats in the cattle meadow.
+
+## Why the CPU looked heavy, and what changed
+- Measured (production, 60 Hz): main thread ~10–20% busy; the cost is three.js draw-call submission, nothing pathological.
+- The 40% in Task Manager is mostly outside the page: the `next dev` server (Turbopack recompiling on every file edit), plus QA browsers/builds that were running.
+- Real issue found: R3F rendered on every display refresh. With vsync off (stand-in for a 144–240 Hz panel) the uncapped page pinned the main thread at **99.3%**. Fix: `frameloop="never"` + `FrameCap` (≤60 fps, 30 fps when idle, 30 with a project open, 15 under the list overlay). Same test with the cap: ~31–39% (mostly the browser's own 1,400+ Hz empty rAF callbacks, which a real panel won't produce); at a normal 60 Hz: **17.7%**.
+- Static parts of the horse and rider are merged per joint (`lib/mergeChildren.ts`); herds skip per-frame bounds work.
+
+## Captures (run `premium-6`, production build)
+| View | calls | tris | tex | errors |
+|---|---|---|---|---|
+| desktop ride | 245 | 429k | 35 | 0/0 |
+| desktop ger-door | 199 | 420k | 39 | 0/0 |
+| desktop interior | 84 | 26k | 42 | 0/0 |
+| mobile ride (low) | 157 | 181k | 15 | 0/0 |
+| mobile ger-door | 112 | 175k | 17 | 0/0 |
+| mobile interior | 37 | 21k | 33 | 0/0 |
+
+All 10 manifest captures PASS; `check_evidence.py` passed (13 artifacts). Tradeoff: mobile ride/list are 157–158 draw calls vs the 150 starting budget (+5%), from the rider and herds; the low tier already drops shadows, post, the eagle and contact decals.
+
+Close-ups: `artifacts/closeups/sheet.png` (rider, ovoo hill, camp, each herd). Gait: `artifacts/motion/gallop-sheet.png`, `trot-sheet.png`, `locomotion.webm`. Perf scripts: `artifacts/perf/*.mjs`.

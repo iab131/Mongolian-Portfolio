@@ -14,7 +14,12 @@ export const GER_SITES: GerSite[] = [
 
 export const gerSiteById = Object.fromEntries(GER_SITES.map((s) => [s.id, s])) as Record<GerId, GerSite>;
 
-export const OVOO = { x: 6, z: 40, radius: 2.2 };
+/** The ovoo stands on top of a hill east of the spawn, as ovoos do. */
+export const OVOO = { x: 36, z: 48, radius: 6 };
+export const OVOO_HILL = { x: OVOO.x, z: OVOO.z, radius: 30, height: 11 };
+
+/** Where the worn tracks meet before fanning out to the gers. */
+export const CAMP_HUB = { x: 2, z: 32 };
 
 /** yaw = 0 faces north (-z). `speed` optionally starts the horse moving (QA captures). */
 export type Pose = { x: number; z: number; yaw: number; speed?: number };
