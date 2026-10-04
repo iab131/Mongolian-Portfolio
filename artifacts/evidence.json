@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "runId": "premium-2",
+  "captures": [
+    { "mode": "desktop", "state": "ride", "report": "artifacts/premium-2/desktop-ride.json" },
+    { "mode": "desktop", "state": "ger-door", "report": "artifacts/premium-2/desktop-ger-door.json" },
+    { "mode": "desktop", "state": "interior", "report": "artifacts/premium-2/desktop-interior.json" },
+    { "mode": "desktop", "state": "project-panel", "report": "artifacts/premium-2/desktop-project-panel.json" },
+    { "mode": "desktop", "state": "project-list", "report": "artifacts/premium-2/desktop-project-list.json" },
+    { "mode": "mobile", "state": "ride", "report": "artifacts/premium-2/mobile-ride.json" },
+    { "mode": "mobile", "state": "ger-door", "report": "artifacts/premium-2/mobile-ger-door.json" },
+    { "mode": "mobile", "state": "interior", "report": "artifacts/premium-2/mobile-interior.json" },
+    { "mode": "mobile", "state": "project-panel", "report": "artifacts/premium-2/mobile-project-panel.json" },
+    { "mode": "mobile", "state": "project-list", "report": "artifacts/premium-2/mobile-project-list.json" }
+  ],
+  "artifacts": ["artifacts/motion/locomotion.webm", "artifacts/motion/gallop-sheet.png", "artifacts/motion/trot-sheet.png"]
+}
